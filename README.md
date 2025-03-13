@@ -169,3 +169,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Credits
 
 Developed by dad-of-code for use with CodeIgniter 4 applications.
+
+This handler uses the [Predis/Predis](https://github.com/predis/predis) library for Redis connections and operations.
