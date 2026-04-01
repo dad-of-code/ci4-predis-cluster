@@ -1,313 +1,174 @@
 <?php
 
-declare(strict_types=1);
+namespace Config;
 
-/**
- * This file is part of CodeIgniter 4 framework.
- *
- * (c) CodeIgniter Foundation <admin@codeigniter.com>
- *
- * For the full copyright and license information, please view
- * the LICENSE file that was distributed with this source code.
- */
+use CodeIgniter\Cache\CacheInterface;
+use CodeIgniter\Cache\Handlers\DummyHandler;
+use CodeIgniter\Cache\Handlers\FileHandler;
+use CodeIgniter\Cache\Handlers\MemcachedHandler;
+use App\Handlers\PredisHandler;
+use CodeIgniter\Cache\Handlers\RedisHandler;
+use CodeIgniter\Cache\Handlers\WincacheHandler;
+use CodeIgniter\Config\BaseConfig;
 
-namespace App\Handlers;
-
-use CodeIgniter\Exceptions\CriticalError;
-use CodeIgniter\I18n\Time;
-use Config\Cache;
-use Exception;
-use Predis\Client;
-use Predis\Collection\Iterator\Keyspace;
-use CodeIgniter\Cache\Handlers\BaseHandler;
-
-/**
- * Predis cache handler
- *
- * @see \CodeIgniter\Cache\Handlers\PredisHandlerTest
- */
-class PredisHandler extends BaseHandler
+class Cache extends BaseConfig
 {
     /**
-     * Default config
+     * --------------------------------------------------------------------------
+     * Primary Handler
+     * --------------------------------------------------------------------------
      *
-     * @var array
+     * The name of the preferred handler that should be used. If for some reason
+     * it is not available, the $backupHandler will be used in its place.
      */
-    protected $config = [
+    public string $handler = 'predis';
+
+    /**
+     * --------------------------------------------------------------------------
+     * Backup Handler
+     * --------------------------------------------------------------------------
+     *
+     * The name of the handler that will be used in case the first one is
+     * unreachable. Often, 'file' is used here since the filesystem is
+     * always available, though that's not always practical for the app.
+     */
+    public string $backupHandler = 'file';
+
+    /**
+     * --------------------------------------------------------------------------
+     * Cache Directory Path
+     * --------------------------------------------------------------------------
+     *
+     * The path to where cache files should be stored, if using a file-based
+     * system.
+     *
+     * @deprecated Use the driver-specific variant under $file
+     */
+    public string $storePath = WRITEPATH . 'cache/';
+
+    /**
+     * --------------------------------------------------------------------------
+     * Key Prefix
+     * --------------------------------------------------------------------------
+     *
+     * This string is added to all cache item names to help avoid collisions
+     * if you run multiple applications with the same cache engine.
+     */
+    public string $prefix = '';
+
+    /**
+     * --------------------------------------------------------------------------
+     * Default TTL
+     * --------------------------------------------------------------------------
+     *
+     * The default number of seconds to save items when none is specified.
+     *
+     * WARNING: This is not used by framework handlers where 60 seconds is
+     * hard-coded, but may be useful to projects and modules. This will replace
+     * the hard-coded value in a future release.
+     */
+    public int $ttl = 60;
+
+    /**
+     * --------------------------------------------------------------------------
+     * Reserved Characters
+     * --------------------------------------------------------------------------
+     *
+     * A string of reserved characters that will not be allowed in keys or tags.
+     * Strings that violate this restriction will cause handlers to throw.
+     * Default: {}()/\@:
+     *
+     * NOTE: The default set is required for PSR-6 compliance.
+     */
+    public string $reservedCharacters = '{}()/\@:';
+
+    /**
+     * --------------------------------------------------------------------------
+     * File settings
+     * --------------------------------------------------------------------------
+     * Your file storage preferences can be specified below, if you are using
+     * the File driver.
+     *
+     * @var array<string, int|string|null>
+     */
+    public array $file = [
+        'storePath' => WRITEPATH . 'cache/',
+        'mode'      => 0640,
+    ];
+
+    /**
+     * -------------------------------------------------------------------------
+     * Memcached settings
+     * -------------------------------------------------------------------------
+     * Your Memcached servers can be specified below, if you are using
+     * the Memcached drivers.
+     *
+     * @see https://codeigniter.com/user_guide/libraries/caching.html#memcached
+     *
+     * @var array<string, bool|int|string>
+     */
+    public array $memcached = [
+        'host'   => '10.2.2.23',
+        'port'   => 11211,
+        'weight' => 1,
+        'raw'    => false,
+    ];
+
+    /**
+     * -------------------------------------------------------------------------
+     * Redis settings
+     * -------------------------------------------------------------------------
+     * Your Redis server can be specified below, if you are using
+     * the Redis or Predis drivers.
+     * 
+     * Use comma-separated hosts to enable cluster mode (e.g. '10.3.2.101,10.3.2.102').
+     *
+     * @var array<string, int|string|null>
+     */
+    public $redis = [
         'scheme'   => 'tcp',
-        'host'     => '127.0.0.1',
-        'password' => null,
+        'host'     => '10.3.2.101,10.3.2.102,10.3.2.103,10.3.2.104,10.3.2.105,10.3.2.106',
+        'password' => 'n9ITXE2GK5',
         'port'     => 6379,
         'timeout'  => 0,
     ];
 
+
     /**
-     * Predis connection
+     * --------------------------------------------------------------------------
+     * Available Cache Handlers
+     * --------------------------------------------------------------------------
      *
-     * @var Client
-     */
-    protected $redis;
-
-    /**
-     * Whether this is a cluster connection (auto-detected from CSV hosts)
+     * This is an array of cache engine alias' and class names. Only engines
+     * that are listed here are allowed to be used.
      *
-     * @var bool
+     * @var array<string, class-string<CacheInterface>>
      */
-    protected $isCluster = false;
+    public array $validHandlers = [
+        'dummy'     => DummyHandler::class,
+        'file'      => FileHandler::class,
+        'memcached' => MemcachedHandler::class,
+        'predis'    => PredisHandler::class,
+        'redis'     => RedisHandler::class,
+        'wincache'  => WincacheHandler::class,
+    ];
 
     /**
-     * Cluster node URIs
+     * --------------------------------------------------------------------------
+     * Web Page Caching: Cache Include Query String
+     * --------------------------------------------------------------------------
      *
-     * @var array
-     */
-    protected $nodes = [];
-
-    /**
-     * Note: Use `CacheFactory::getHandler()` to instantiate.
-     */
-    public function __construct(Cache $config)
-    {
-        $this->prefix = $config->prefix;
-
-        if (isset($config->redis)) {
-            $this->config = array_merge($this->config, $config->redis);
-        }
-
-        // Auto-detect cluster mode from comma-separated hosts
-        if (str_contains($this->config['host'], ',')) {
-            $this->isCluster = true;
-            $hosts = array_map('trim', explode(',', $this->config['host']));
-            $port = $this->config['port'] ?? 6379;
-            $scheme = $this->config['scheme'] ?? 'tcp';
-
-            foreach ($hosts as $host) {
-                $this->nodes[] = "{$scheme}://{$host}:{$port}";
-            }
-        }
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function initialize()
-    {
-        try {
-            if ($this->isCluster) {
-                $options = [
-                    'cluster'    => 'redis',
-                    'prefix'     => $this->prefix,
-                ];
-
-                if (! empty($this->config['password'])) {
-                    $options['parameters'] = ['password' => $this->config['password']];
-                }
-
-                $this->redis = new Client($this->nodes, $options);
-            } else {
-                $this->redis = new Client($this->config, ['prefix' => $this->prefix]);
-                $this->redis->time();
-            }
-        } catch (Exception $e) {
-            throw new CriticalError('Cache: Predis connection refused (' . $e->getMessage() . ').');
-        }
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function get(string $key)
-    {
-        $key = static::validateKey($key);
-
-        $data = array_combine(
-            ['__ci_type', '__ci_value'],
-            $this->redis->hmget($key, ['__ci_type', '__ci_value'])
-        );
-
-        if (! isset($data['__ci_type'], $data['__ci_value']) || $data['__ci_value'] === false) {
-            return null;
-        }
-
-        return match ($data['__ci_type']) {
-            'array', 'object' => unserialize($data['__ci_value']),
-            // Yes, 'double' is returned and NOT 'float'
-            'boolean', 'integer', 'double', 'string', 'NULL' => settype($data['__ci_value'], $data['__ci_type']) ? $data['__ci_value'] : null,
-            default => null,
-        };
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function save(string $key, $value, int $ttl = 60)
-    {
-        $key = static::validateKey($key);
-
-        switch ($dataType = gettype($value)) {
-            case 'array':
-            case 'object':
-                $value = serialize($value);
-                break;
-
-            case 'boolean':
-            case 'integer':
-            case 'double': // Yes, 'double' is returned and NOT 'float'
-            case 'string':
-            case 'NULL':
-                break;
-
-            case 'resource':
-            default:
-                return false;
-        }
-
-        if (! $this->redis->hmset($key, ['__ci_type' => $dataType, '__ci_value' => $value])) {
-            return false;
-        }
-
-        if ($ttl !== 0) {
-            $this->redis->expireat($key, Time::now()->getTimestamp() + $ttl);
-        }
-
-        return true;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function delete(string $key)
-    {
-        $key = static::validateKey($key);
-
-        return $this->redis->del($key) === 1;
-    }
-
-    /**
-     * {@inheritDoc}
+     * Whether to take the URL query string into consideration when generating
+     * output cache files. Valid options are:
      *
-     * @return int
-     */
-    public function deleteMatching(string $pattern)
-    {
-        $matchedKeys = [];
-
-        foreach (new Keyspace($this->redis, $pattern) as $key) {
-            $matchedKeys[] = $key;
-        }
-
-        return $this->redis->del($matchedKeys);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function increment(string $key, int $offset = 1)
-    {
-        $key = static::validateKey($key);
-
-        return $this->redis->hincrby($key, 'data', $offset);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function decrement(string $key, int $offset = 1)
-    {
-        $key = static::validateKey($key);
-
-        return $this->redis->hincrby($key, 'data', -$offset);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function clean()
-    {
-        return $this->redis->flushdb()->getPayload() === 'OK';
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function getCacheInfo()
-    {
-        return $this->redis->info();
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function getMetaData(string $key)
-    {
-        $key = static::validateKey($key);
-
-        $data = array_combine(['__ci_value'], $this->redis->hmget($key, ['__ci_value']));
-
-        if (isset($data['__ci_value']) && $data['__ci_value'] !== false) {
-            $time = Time::now()->getTimestamp();
-            $ttl  = $this->redis->ttl($key);
-
-            return [
-                'expire' => $ttl > 0 ? $time + $ttl : null,
-                'mtime'  => $time,
-                'data'   => $data['__ci_value'],
-            ];
-        }
-
-        return null;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function isSupported(): bool
-    {
-        return class_exists(Client::class);
-    }
-
-    /**
-     * Get the underlying Predis client for direct Redis commands
-     * 
-     * @return Client|null
-     */
-    public function getClient(): ?Client
-    {
-        return $this->redis;
-    }
-
-    /**
-     * Clear user cache by deleting all keys matching the 'user_data_*' pattern.
+     *    false = Disabled
+     *    true  = Enabled, take all query parameters into account.
+     *            Please be aware that this may result in numerous cache
+     *            files generated for the same page over and over again.
+     *    ['q'] = Enabled, but only take into account the specified list
+     *            of query parameters.
      *
-     * @return bool True if the cache clearing process was successful.
+     * @var bool|list<string>
      */
-    public function clearCacheItems($key = null): bool
-    {
-        if ($key === null) {
-            log_message('error', 'Error clearing cache: No item specified');
-            return false;
-        }
-
-        try {
-            $cachePattern = $this->prefix . $key . '*'; // Ensure to match all keys with the pattern.
-
-            // Iterate through each node in the cluster.
-            foreach ($this->redis->getConnection() as $connection) {
-                $nodeClient = new Client($connection->getParameters());
-
-                $iterator = new Keyspace($nodeClient, $cachePattern);
-
-                // Use the Keyspace iterator to scan and delete matching keys.
-                foreach ($iterator as $keyItem) {
-                    $nodeClient->del($keyItem);
-                    log_message('info', 'Cache cleared for ' . $keyItem . '.');
-                }
-                log_message('info', 'Cache cleared on node ' . $connection->getParameters() . '.');
-            }
-            log_message('info', 'Cache cleared for ' . $cachePattern . ' pattern usering supplied key of: ' . $key);
-            return true;
-        } catch (Exception $e) {
-            log_message('error', 'Error clearing cache for ' . $key . ': ' . $e->getMessage());
-            return false;
-        }
-    }
+    public $cacheQueryString = false;
 }
