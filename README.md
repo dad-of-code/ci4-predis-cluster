@@ -33,8 +33,8 @@ For more information about CodeIgniter 4, visit the official repository: [https:
 
 ## Features
 
-- **Redis Cluster Support**: Connect to multiple Redis nodes in a cluster configuration
-- **Flexible Configuration**: Support for both single-server and clustered Redis setups
+- **Auto-Detected Cluster Support**: Comma-separated hosts in the standard `$redis` config automatically enable cluster mode
+- **Simplified Configuration**: Single `$redis` array for both standalone and clustered setups — no separate connection config needed
 - **Type-Safe Caching**: Preserves PHP data types when storing and retrieving from cache
 - **Cluster-Aware Operations**: Properly handles operations across all nodes in a Redis cluster
 - **Performance Optimized**: Designed for high-performance applications with distributed caching needs
@@ -54,18 +54,14 @@ composer require predis/predis
 
 ## Configuration
 
-### Basic Configuration
+Configuration uses the standard CodeIgniter `$redis` array in `app/Config/Cache.php`. Cluster mode is **auto-detected** from the `host` value — use a single host for a standalone server, or comma-separated hosts for a Redis Cluster.
 
-To use PredisHandler with a single Redis server, configure your `app/Config/Cache.php` file as follows:
+### Single Server
 
 ```php
 public string $handler = 'predis';
 public string $backupHandler = 'file';
 
-// Set this to false for single server mode
-public $aggregate_connections = false;
-
-// Single server configuration
 public $redis = [
     'scheme'   => 'tcp',
     'host'     => '127.0.0.1',
@@ -75,29 +71,20 @@ public $redis = [
 ];
 ```
 
-### Redis Cluster Configuration
+### Redis Cluster
 
-To use PredisHandler with a Redis Cluster, configure your `app/Config/Cache.php` file as follows:
+Provide comma-separated hosts to automatically enable cluster mode. All nodes share the same port and password.
 
 ```php
 public string $handler = 'predis';
 public string $backupHandler = 'file';
 
-// Enable cluster mode
-public $aggregate_connections = true;
-
-// Cluster configuration
-public $connections = [
-    'cluster' => 'redis',
-    'parameters' => [
-        'password' => 'your-password',
-    ],
-    'nodes' => [
-        'tcp://redis-node1:6379',
-        'tcp://redis-node2:6379',
-        'tcp://redis-node3:6379',
-        // Add more nodes as needed
-    ]
+public $redis = [
+    'scheme'   => 'tcp',
+    'host'     => '10.3.2.101,10.3.2.102,10.3.2.103,10.3.2.104,10.3.2.105,10.3.2.106',
+    'password' => 'your-password',
+    'port'     => 6379,
+    'timeout'  => 0,
 ];
 ```
 
