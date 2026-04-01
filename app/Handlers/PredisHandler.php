@@ -2,6 +2,15 @@
 
 declare(strict_types=1);
 
+/**
+ * This file is part of CodeIgniter 4 framework.
+ *
+ * (c) CodeIgniter Foundation <admin@codeigniter.com>
+ *
+ * For the full copyright and license information, please view
+ * the LICENSE file that was distributed with this source code.
+ */
+
 namespace App\Handlers;
 
 use CodeIgniter\Exceptions\CriticalError;
@@ -72,7 +81,7 @@ class PredisHandler extends BaseHandler
     /**
      * {@inheritDoc}
      */
-    public function initialize()
+    public function initialize(): void
     {
         try {
             if ($this->aggregate_connections) {
@@ -89,7 +98,7 @@ class PredisHandler extends BaseHandler
     /**
      * {@inheritDoc}
      */
-    public function get(string $key)
+    public function get(string $key): mixed
     {
         $key = static::validateKey($key);
 
@@ -113,7 +122,7 @@ class PredisHandler extends BaseHandler
     /**
      * {@inheritDoc}
      */
-    public function save(string $key, $value, int $ttl = 60)
+    public function save(string $key, $value, int $ttl = 60): bool
     {
         $key = static::validateKey($key);
 
@@ -149,7 +158,7 @@ class PredisHandler extends BaseHandler
     /**
      * {@inheritDoc}
      */
-    public function delete(string $key)
+    public function delete(string $key): bool
     {
         $key = static::validateKey($key);
 
@@ -161,7 +170,7 @@ class PredisHandler extends BaseHandler
      *
      * @return int
      */
-    public function deleteMatching(string $pattern)
+    public function deleteMatching(string $pattern): int
     {
         $matchedKeys = [];
 
@@ -175,7 +184,7 @@ class PredisHandler extends BaseHandler
     /**
      * {@inheritDoc}
      */
-    public function increment(string $key, int $offset = 1)
+    public function increment(string $key, int $offset = 1): int
     {
         $key = static::validateKey($key);
 
@@ -185,7 +194,7 @@ class PredisHandler extends BaseHandler
     /**
      * {@inheritDoc}
      */
-    public function decrement(string $key, int $offset = 1)
+    public function decrement(string $key, int $offset = 1): int
     {
         $key = static::validateKey($key);
 
@@ -195,7 +204,7 @@ class PredisHandler extends BaseHandler
     /**
      * {@inheritDoc}
      */
-    public function clean()
+    public function clean(): bool
     {
         return $this->redis->flushdb()->getPayload() === 'OK';
     }
@@ -203,7 +212,7 @@ class PredisHandler extends BaseHandler
     /**
      * {@inheritDoc}
      */
-    public function getCacheInfo()
+    public function getCacheInfo(): array
     {
         return $this->redis->info();
     }
@@ -211,7 +220,7 @@ class PredisHandler extends BaseHandler
     /**
      * {@inheritDoc}
      */
-    public function getMetaData(string $key)
+    public function getMetaData(string $key): ?array
     {
         $key = static::validateKey($key);
 
@@ -240,41 +249,48 @@ class PredisHandler extends BaseHandler
     }
 
     /**
+     * Get the underlying Predis client for direct Redis commands
+     * 
+     * @return Client|null
+     */
+    public function getClient(): ?Client
+    {
+        return $this->redis;
+    }
+
+    /**
      * Clear user cache by deleting all keys matching the 'user_data_*' pattern.
      *
      * @return bool True if the cache clearing process was successful.
      */
     public function clearCacheItems($key = null): bool
-{
-    if ($key === null) {
-        log_message('error', 'Error clearing cache: No item specified');
-        return false;
-    }
-
-    try {
-        $cachePattern = $this->prefix . $key . '*'; // Ensure to match all keys with the pattern.
-
-        // Iterate through each node in the cluster.
-        foreach ($this->redis->getConnection() as $connection) {
-            $nodeClient = new Client($connection->getParameters());
-
-            $iterator = new Keyspace($nodeClient, $cachePattern);
-
-            // Use the Keyspace iterator to scan and delete matching keys.
-            foreach ($iterator as $keyItem) {
-                $nodeClient->del($keyItem);
-                log_message('info', 'Cache cleared for ' . $keyItem . '.');
-            }
-            log_message('info', 'Cache cleared on node ' . $connection->getParameters() . '.');
+    {
+        if ($key === null) {
+            log_message('error', 'Error clearing cache: No item specified');
+            return false;
         }
-        log_message('info', 'Cache cleared for ' . $cachePattern . ' pattern usering supplied key of: ' . $key);
-        return true;
-    } catch (Exception $e) {
-        log_message('error', 'Error clearing cache for ' . $key . ': ' . $e->getMessage());
-        return false;
+
+        try {
+            $cachePattern = $this->prefix . $key . '*'; // Ensure to match all keys with the pattern.
+
+            // Iterate through each node in the cluster.
+            foreach ($this->redis->getConnection() as $connection) {
+                $nodeClient = new Client($connection->getParameters());
+
+                $iterator = new Keyspace($nodeClient, $cachePattern);
+
+                // Use the Keyspace iterator to scan and delete matching keys.
+                foreach ($iterator as $keyItem) {
+                    $nodeClient->del($keyItem);
+                    log_message('info', 'Cache cleared for ' . $keyItem . '.');
+                }
+                log_message('info', 'Cache cleared on node ' . $connection->getParameters() . '.');
+            }
+            log_message('info', 'Cache cleared for ' . $cachePattern . ' pattern usering supplied key of: ' . $key);
+            return true;
+        } catch (Exception $e) {
+            log_message('error', 'Error clearing cache for ' . $key . ': ' . $e->getMessage());
+            return false;
+        }
     }
-}
-
-
-    
 }
