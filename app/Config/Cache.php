@@ -3,6 +3,7 @@
 namespace Config;
 
 use CodeIgniter\Cache\CacheInterface;
+use CodeIgniter\Cache\Handlers\ApcuHandler;
 use CodeIgniter\Cache\Handlers\DummyHandler;
 use CodeIgniter\Cache\Handlers\FileHandler;
 use CodeIgniter\Cache\Handlers\MemcachedHandler;
@@ -36,25 +37,13 @@ class Cache extends BaseConfig
 
     /**
      * --------------------------------------------------------------------------
-     * Cache Directory Path
-     * --------------------------------------------------------------------------
-     *
-     * The path to where cache files should be stored, if using a file-based
-     * system.
-     *
-     * @deprecated Use the driver-specific variant under $file
-     */
-    public string $storePath = WRITEPATH . 'cache/';
-
-    /**
-     * --------------------------------------------------------------------------
      * Key Prefix
      * --------------------------------------------------------------------------
      *
      * This string is added to all cache item names to help avoid collisions
      * if you run multiple applications with the same cache engine.
      */
-    public string $prefix = '';
+    public string $prefix = 'prodaq_';
 
     /**
      * --------------------------------------------------------------------------
@@ -86,10 +75,11 @@ class Cache extends BaseConfig
      * --------------------------------------------------------------------------
      * File settings
      * --------------------------------------------------------------------------
+     *
      * Your file storage preferences can be specified below, if you are using
      * the File driver.
      *
-     * @var array<string, int|string|null>
+     * @var array{storePath?: string, mode?: int}
      */
     public array $file = [
         'storePath' => WRITEPATH . 'cache/',
@@ -100,15 +90,16 @@ class Cache extends BaseConfig
      * -------------------------------------------------------------------------
      * Memcached settings
      * -------------------------------------------------------------------------
+     *
      * Your Memcached servers can be specified below, if you are using
      * the Memcached drivers.
      *
      * @see https://codeigniter.com/user_guide/libraries/caching.html#memcached
      *
-     * @var array<string, bool|int|string>
+     * @var array{host?: string, port?: int, weight?: int, raw?: bool}
      */
     public array $memcached = [
-        'host'   => '10.2.2.23',
+        'host'   => '127.0.0.1',
         'port'   => 11211,
         'weight' => 1,
         'raw'    => false,
@@ -118,21 +109,31 @@ class Cache extends BaseConfig
      * -------------------------------------------------------------------------
      * Redis settings
      * -------------------------------------------------------------------------
+     *
      * Your Redis server can be specified below, if you are using
      * the Redis or Predis drivers.
-     * 
-     * Use comma-separated hosts to enable cluster mode (e.g. '10.3.2.101,10.3.2.102').
      *
-     * @var array<string, int|string|null>
+     * Use comma-separated hosts to enable cluster mode (e.g. '10.0.0.101,10.0.0.102').
+     *
+     * @var array{
+     *     host?: string,
+     *     password?: string|null,
+     *     port?: int,
+     *     timeout?: int,
+     *     async?: bool,
+     *     persistent?: bool,
+     *     database?: int
+     * }
      */
-    public $redis = [
-        'scheme'   => 'tcp',
-        'host'     => '10.3.2.101,10.3.2.102,10.3.2.103,10.3.2.104,10.3.2.105,10.3.2.106',
-        'password' => 'n9ITXE2GK5',
-        'port'     => 6379,
-        'timeout'  => 0,
+    public array $redis = [
+        'host'       => '127.0.0.1',
+        'password'   => null,
+        'port'       => 6379,
+        'timeout'    => 0,
+        'async'      => false, // specific to Predis and ignored by the native Redis extension
+        'persistent' => false,
+        'database'   => 0,
     ];
-
 
     /**
      * --------------------------------------------------------------------------
@@ -145,6 +146,7 @@ class Cache extends BaseConfig
      * @var array<string, class-string<CacheInterface>>
      */
     public array $validHandlers = [
+        'apcu'      => ApcuHandler::class,
         'dummy'     => DummyHandler::class,
         'file'      => FileHandler::class,
         'memcached' => MemcachedHandler::class,
@@ -171,4 +173,28 @@ class Cache extends BaseConfig
      * @var bool|list<string>
      */
     public $cacheQueryString = false;
+
+    /**
+     * --------------------------------------------------------------------------
+     * Web Page Caching: Cache Status Codes
+     * --------------------------------------------------------------------------
+     *
+     * HTTP status codes that are allowed to be cached. Only responses with
+     * these status codes will be cached by the PageCache filter.
+     *
+     * Default: [] - Cache all status codes (backward compatible)
+     *
+     * Recommended: [200] - Only cache successful responses
+     *
+     * You can also use status codes like:
+     *   [200, 404, 410] - Cache successful responses and specific error codes
+     *   [200, 201, 202, 203, 204] - All 2xx successful responses
+     *
+     * WARNING: Using [] may cache temporary error pages (404, 500, etc).
+     * Consider restricting to [200] for production applications to avoid
+     * caching errors that should be temporary.
+     *
+     * @var list<int>
+     */
+    public array $cacheStatusCodes = [];
 }
