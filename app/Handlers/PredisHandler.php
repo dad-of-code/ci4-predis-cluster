@@ -48,14 +48,19 @@ class PredisHandler extends BaseHandler
      */
     protected $redis;
 
-
-    /** 
-     * 
-     * Aggregate connections enabled
-     * 
+    /**
+     * Whether this is a cluster connection (auto-detected from CSV hosts)
+     *
      * @var bool
      */
-    protected $aggregate_connections = false;
+    protected $isCluster = false;
+
+    /**
+     * Cluster node URIs
+     *
+     * @var array
+     */
+    protected $nodes = [];
 
     /**
      * Note: Use `CacheFactory::getHandler()` to instantiate.
@@ -64,28 +69,40 @@ class PredisHandler extends BaseHandler
     {
         $this->prefix = $config->prefix;
 
-        if (isset($config->aggregate_connections)) {
-            $this->aggregate_connections = $config->aggregate_connections;
-        }
-
-        if (isset($config->redis) && $this->aggregate_connections == false) {
+        if (isset($config->redis)) {
             $this->config = array_merge($this->config, $config->redis);
         }
 
-        if ($this->aggregate_connections) {
-            $this->config = $config->connections;
-            $this->config = array_merge($this->config, ['prefix' => $this->prefix]);
+        // Auto-detect cluster mode from comma-separated hosts
+        if (str_contains($this->config['host'], ',')) {
+            $this->isCluster = true;
+            $hosts = array_map('trim', explode(',', $this->config['host']));
+            $port = $this->config['port'] ?? 6379;
+            $scheme = $this->config['scheme'] ?? 'tcp';
+
+            foreach ($hosts as $host) {
+                $this->nodes[] = "{$scheme}://{$host}:{$port}";
+            }
         }
     }
 
     /**
      * {@inheritDoc}
      */
-    public function initialize(): void
+    public function initialize()
     {
         try {
-            if ($this->aggregate_connections) {
-                $this->redis = new Client($this->config['nodes'], $this->config);
+            if ($this->isCluster) {
+                $options = [
+                    'cluster'    => 'redis',
+                    'prefix'     => $this->prefix,
+                ];
+
+                if (! empty($this->config['password'])) {
+                    $options['parameters'] = ['password' => $this->config['password']];
+                }
+
+                $this->redis = new Client($this->nodes, $options);
             } else {
                 $this->redis = new Client($this->config, ['prefix' => $this->prefix]);
                 $this->redis->time();
@@ -98,7 +115,7 @@ class PredisHandler extends BaseHandler
     /**
      * {@inheritDoc}
      */
-    public function get(string $key): mixed
+    public function get(string $key)
     {
         $key = static::validateKey($key);
 
@@ -122,7 +139,7 @@ class PredisHandler extends BaseHandler
     /**
      * {@inheritDoc}
      */
-    public function save(string $key, $value, int $ttl = 60): bool
+    public function save(string $key, $value, int $ttl = 60)
     {
         $key = static::validateKey($key);
 
@@ -158,7 +175,7 @@ class PredisHandler extends BaseHandler
     /**
      * {@inheritDoc}
      */
-    public function delete(string $key): bool
+    public function delete(string $key)
     {
         $key = static::validateKey($key);
 
@@ -170,7 +187,7 @@ class PredisHandler extends BaseHandler
      *
      * @return int
      */
-    public function deleteMatching(string $pattern): int
+    public function deleteMatching(string $pattern)
     {
         $matchedKeys = [];
 
@@ -184,7 +201,7 @@ class PredisHandler extends BaseHandler
     /**
      * {@inheritDoc}
      */
-    public function increment(string $key, int $offset = 1): int
+    public function increment(string $key, int $offset = 1)
     {
         $key = static::validateKey($key);
 
@@ -194,7 +211,7 @@ class PredisHandler extends BaseHandler
     /**
      * {@inheritDoc}
      */
-    public function decrement(string $key, int $offset = 1): int
+    public function decrement(string $key, int $offset = 1)
     {
         $key = static::validateKey($key);
 
@@ -204,7 +221,7 @@ class PredisHandler extends BaseHandler
     /**
      * {@inheritDoc}
      */
-    public function clean(): bool
+    public function clean()
     {
         return $this->redis->flushdb()->getPayload() === 'OK';
     }
@@ -212,7 +229,7 @@ class PredisHandler extends BaseHandler
     /**
      * {@inheritDoc}
      */
-    public function getCacheInfo(): array
+    public function getCacheInfo()
     {
         return $this->redis->info();
     }
@@ -220,7 +237,7 @@ class PredisHandler extends BaseHandler
     /**
      * {@inheritDoc}
      */
-    public function getMetaData(string $key): ?array
+    public function getMetaData(string $key)
     {
         $key = static::validateKey($key);
 
